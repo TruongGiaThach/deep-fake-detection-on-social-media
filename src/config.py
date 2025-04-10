@@ -1,22 +1,29 @@
 # config.py
 
 # Dataset paths
-REAL_PATH = "../dataset/DFD_original_sequences"
-FAKE_PATH = "../dataset/DFD_manipulated_sequences/DFD_manipulated_sequences"
+DATASET_PATH = "../dataset"
+REAL_PATH = "../dataset/videos/real"
+FAKE_PATH = "../dataset/videos/fake"
 
 # Frame extraction settings
-OUTPUT_FRAME_SIZE = (128, 128)
-FACE_SIZE = 128
+OUTPUT_FRAME_SIZE = (224, 224)
+FACE_SIZE = 224
+MIN_FACE_HEIGHT=40
+MIN_FACE_WIDTH=40
 FRAME_COUNT = 10  
-MAX_VIDEOS = 700  
+BATCH_SIZE = 32
 
 # Data paths
 FRAME_SAVE_PATH = "data/frames/"
 LABEL_FILE = "data/frames/labels.csv"
+DATA_PROCESSED_CHECKPOINT_REAL = "data/frames/real_checkpoints.txt"
+DATA_PROCESSED_CHECKPOINT_FAKE = "data/frames/fake_checkpoints.txt"
 
 # Model paths
-MODEL_SAVE_PATH = "models/deepfake_detection_model.pth"
-CHECKPOINT_SAVE_PATH = "check_points"
+PROTO_PATH = "models/dnn_face/deploy.prototxt"
+MODEL_PATH = "models/dnn_face/res10_300x300_ssd_iter_140000.caffemodel"
+MODEL_SAVE_PATH = "models/result/deepfake_detection_model.pth"
+MODEL_CHECKPOINT = "check_points"
 
 # LogS paths
 LOGS_PATH = "logs"
