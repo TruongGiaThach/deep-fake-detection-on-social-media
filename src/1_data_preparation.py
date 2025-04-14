@@ -89,7 +89,7 @@ def score_face(face):
     # Size score: prioritize larger faces
     width = face.bbox[2] - face.bbox[0]
     height = face.bbox[3] - face.bbox[1]
-    size_score = (width * height) / 1000  # Face area
+    size_score = (width * height)  # Face area
 
     # if width < MIN_FACE_HEIGHT or height < MIN_FACE_WIDTH:  # example threshold
     #     size_score=size_score/2
@@ -97,14 +97,30 @@ def score_face(face):
     feature = feature_score(face)
 
     # Increase the weight on size and penalize on face that is not head-on
-    weighted_score = size_score * 2.5 + frontal_score + feature * 2 # The weight can be adjusted
-    print("size_score: ", size_score)
-    print("frontal_score: ", frontal_score)
-    print("feature: ", feature)
-    print("weighted_score: ", weighted_score)
-    print()
+    return {
+        'face': face,
+        'size': size_score,
+        'frontal': frontal_score,
+        'feature': feature,
+    }
 
-    return weighted_score
+def normalize_scores(scored_faces):
+    size_scores = np.array([s['size'] for s in scored_faces], dtype=np.float32)
+    frontal_scores = np.array([s['frontal'] for s in scored_faces], dtype=np.float32)
+    feature_scores = np.array([s['feature'] for s in scored_faces], dtype=np.float32)
+
+    def normalize(arr):
+        arr = np.array(arr, dtype=np.float32)
+        max_val = arr.max()
+        if max_val < 1e-5:
+            return np.full_like(arr, 50.0)  # fallback if all values are zero or near zero
+        return (arr / max_val) * 50.0
+
+    norm_size = normalize(size_scores)
+
+    for i in range(len(scored_faces)):
+        scored_faces[i]['norm_score'] = norm_size[i] + frontal_scores[i] + feature_scores[i] * 2
+    return scored_faces
 
 def safe_crop(face, frame_rgb):
     # Clamping Coordinates
@@ -120,6 +136,10 @@ def safe_crop(face, frame_rgb):
 
     return frame_rgb[y1:y2, x1:x2]
 
+# ================================
+# === Batched Detection Function
+# ================================
+
 def detect_and_crop_best_face(frame_rgb):
     faces = detector.get(frame_rgb)
     
@@ -127,31 +147,41 @@ def detect_and_crop_best_face(frame_rgb):
         return None
 
     # Filter and prioritize faces based on new scoring system
-    scored_faces = []
-    count = 1
-    for face in faces:
-        # Score faces and apply the new scoring system
-        print(f"face {count}")
-        score = score_face(face)
-        count+=1
-        scored_faces.append((face, score))
+    scored_faces = [score_face(face) for face in faces]
+
     if not scored_faces:
         return None
 
     # Get the face with the highest score
-    best_face, best_score = max(scored_faces, key=lambda x: x[1])
-    if best_face:
-        print("best_score: ", best_score)
-        print()
-        face_crop = safe_crop(best_face, frame_rgb)
-        if face_crop.size == 0:
-            return None  # Crop failed, avoid crashing
+    scored_faces = normalize_scores(scored_faces)
+    
+    # Sort faces by normalized score in descending order
+    sorted_faces = sorted(scored_faces, key=lambda x: x['norm_score'], reverse=True)
+
+    # First pass: try to find a non-blurry face
+    for scored in sorted_faces:
+        best_face = scored['face']
+        if best_face:
+            face_crop = safe_crop(best_face, frame_rgb)
+            if face_crop.size == 0:
+                continue  # Crop failed, try next
+
+            # Blur filter check
+            if blur_score(face_crop) < 8:  # You can tune this threshold
+                continue  # Too blurry, try next
+
+            return cv2.resize(face_crop, OUTPUT_FRAME_SIZE)
         
-        # Blur filter check
-        if blur_score(face_crop) < 8:  # You can tune this threshold
-            return None
-        
-        return cv2.resize(face_crop, OUTPUT_FRAME_SIZE)
+    # Second pass: fallback to best valid face without blur check
+    for scored in sorted_faces:
+        best_face = scored['face']
+        if best_face:
+            face_crop = safe_crop(best_face, frame_rgb)
+            if face_crop.size == 0:
+                continue
+            return cv2.resize(face_crop, OUTPUT_FRAME_SIZE)
+
+    # No valid face found
     return None
 
 # Function to extract frames, detect faces, and save as images
@@ -335,7 +365,7 @@ def test():
     os.makedirs(frames_path, exist_ok=True)
     folder_path = os.path.join(REAL_PATH, real_folder)
 
-    fake_videos = ["014.mp4","060.mp4","091.mp4","156.mp4", "190.mp4"]
+    fake_videos = ["014.mp4","060.mp4","091.mp4","156.mp4", "190.mp4", "344.mp4", "508.mp4", "581.mp4", "607.mp4"]
     for video_file in tqdm(fake_videos):
         video_path = os.path.join(folder_path, video_file)
         extract_and_save_frames(video_path, real_folder, frames_path, 0, FRAME_COUNT, writer)
@@ -343,4 +373,4 @@ def test():
     writer.join()
 
 if __name__ == '__main__':
-    test()
+    main()
