@@ -7,29 +7,43 @@ from config import FRAME_SAVE_PATH, LABEL_FILE, OUTPUT_FRAME_SIZE, FRAME_COUNT
 import random
 
 # Threshold for blur detection
-BLUR_THRESHOLD = 100.0
+# BLUR_THRESHOLD = 100.0
 
-def is_blurry(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    variance = cv2.Laplacian(gray, cv2.CV_64F).var()
-    return variance < BLUR_THRESHOLD
+# def is_blurry(image):
+#     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+#     variance = cv2.Laplacian(gray, cv2.CV_64F).var()
+#     return variance < BLUR_THRESHOLD
 
 def apply_random_augmentation(image):
     img = image.copy()
+    h, w = img.shape[:2]  # Moved here to ensure w and h are always defined
+
     # Random horizontal flip
     if random.random() < 0.5:
         img = cv2.flip(img, 1)
-    # Random brightness and contrast
+    
+    # Random brightness and contrast adjustment
     if random.random() < 0.5:
-        alpha = 1.0 + (0.2 * (np.random.rand() - 0.5))  # contrast
-        beta = 10 * (np.random.rand() - 0.5)            # brightness
+        alpha = 1.0 + (0.6 * (np.random.rand() - 0.5))  # contrast factor between ~0.7 to 1.3
+        beta = 50 * (np.random.rand() - 0.5)            # brightness shift between -25 and +25
         img = cv2.convertScaleAbs(img, alpha=alpha, beta=beta)
-    # Random rotation
-    if random.random() < 0.3:
-        h, w = img.shape[:2]
-        M = cv2.getRotationMatrix2D((w//2, h//2), np.random.uniform(-5, 5), 1)
-        img = cv2.warpAffine(img, M, (w, h))
+    
+    # Random rotation with larger angle
+    if random.random() < 0.5:
+        angle = np.random.uniform(-15, 15)  # rotate between -15 and 15 degrees
+        M = cv2.getRotationMatrix2D((w//2, h//2), angle, 1)
+        img = cv2.warpAffine(img, M, (w, h), borderMode=cv2.BORDER_REFLECT101)
+    
+    # Random scaling and translation
+    if random.random() < 0.4:
+        scale = np.random.uniform(0.9, 1.1)  # scale between 90% and 110%
+        tx = np.random.uniform(-0.05 * w, 0.05 * w)  # translate x
+        ty = np.random.uniform(-0.05 * h, 0.05 * h)  # translate y
+        M = np.array([[scale, 0, tx], [0, scale, ty]], dtype=np.float32)
+        img = cv2.warpAffine(img, M, (w, h), borderMode=cv2.BORDER_REFLECT101)
+
     return img
+
 
 def load_images_grouped():
     df = pd.read_csv(LABEL_FILE)
@@ -41,20 +55,20 @@ def load_images_grouped():
     removed_indices = []
     group_names = []
 
-    for group_name, group_df in df.groupby('group'):
+    for group_name, group_df in tqdm(df.groupby('group')):
         group_imgs = []
         label = group_df.iloc[0].label
         subfolder = group_df.iloc[0].subfolder
         for idx, row in group_df.iterrows():
-            path = os.path.join(FRAME_SAVE_PATH, "real" if row.label == 0 else "fake", subfolder, row.filename)
+            path = os.path.join(FRAME_SAVE_PATH, "real" if row.label == 0 else "fake", row.filename)
             if not os.path.exists(path):
                 removed_indices.append(idx)
                 continue
             img = cv2.imread(path)
-            if is_blurry(img):
-                os.remove(path)
-                removed_indices.append(idx)
-                continue
+            # if is_blurry(img):
+            #     os.remove(path)
+            #     removed_indices.append(idx)
+            #     continue
             img_resized = cv2.resize(img, OUTPUT_FRAME_SIZE)
             group_imgs.append(img_resized)
 
@@ -67,16 +81,16 @@ def load_images_grouped():
     df.to_csv(LABEL_FILE, index=False)
     return X_all, y_all, df, group_names
 
-def augment_group_with_transforms(group_name, group_imgs, label, needed_count, start_idx, subfolder):
+def augment_group_with_transforms(group_name, group_imgs, label, needed_count, start_idx):
     new_labels = []
     for i in range(needed_count):
         chosen_img = random.choice(group_imgs)
         aug_img = apply_random_augmentation(chosen_img)
         fname = f"{group_name}_aug_{i+start_idx}.jpg"
-        save_path = os.path.join(FRAME_SAVE_PATH, "real" if label == 0 else "fake", subfolder, fname)
+        save_path = os.path.join(FRAME_SAVE_PATH, "real" if label == 0 else "fake", fname)
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         cv2.imwrite(save_path, aug_img)
-        new_labels.append([os.path.join(subfolder, fname), label])
+        new_labels.append([fname, label])
     return new_labels
 
 def main():
@@ -89,7 +103,7 @@ def main():
         missing_count = FRAME_COUNT - len(group_imgs)
         if missing_count <= 0:
             continue
-        new_labels = augment_group_with_transforms(group_name, group_imgs, label, missing_count, 0, subfolder)
+        new_labels = augment_group_with_transforms(group_name, group_imgs, label, missing_count, 0)
         new_labels_total.extend(new_labels)
 
     # 2. Balance real vs fake
@@ -103,7 +117,7 @@ def main():
         real_imgs_data = []
 
         for _, row in tqdm(all_real_entries.iterrows(), total=all_real_entries.shape[0]):
-            path = os.path.join(FRAME_SAVE_PATH, "real", row.subfolder, row.filename)
+            path = os.path.join(FRAME_SAVE_PATH, "real", row.filename)
             if not os.path.exists(path):
                 continue
             img = cv2.imread(path)
