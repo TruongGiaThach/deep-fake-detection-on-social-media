@@ -8,7 +8,7 @@ import torch
 from PIL import Image
 from albumentations.pytorch import ToTensorV2
 from torch.utils.data import Dataset, IterableDataset
-from utils import extract_bb
+from data_utils.utils import extract_bb
 
 
 def load_face(record: pd.Series, root: str, size: int, scale: str, transformer: A.BasicTransform) -> torch.Tensor:

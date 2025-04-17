@@ -6,7 +6,7 @@ import torch.nn as nn
 from torchvision import transforms
 from torch.utils.data import DataLoader, Dataset
 from PIL import Image
-from efficient_net_lstm import EfficientNetLSTM
+from models.efficient_net_lstm import EfficientNetLSTM
 from config import FRAME_SAVE_PATH, LABEL_FILE
 
 # Configuration
@@ -83,7 +83,7 @@ def detect_deepfakes(model, dataloader):
     with torch.no_grad():
         for images, filenames in dataloader:
             images, filenames = images.to(device), filenames.to(device)
-            
+
             preds = batch_forward(model, device, images, filenames)
             total += filenames.size(0)
             correct += (preds == filenames).sum().item()
@@ -101,8 +101,9 @@ def detect_deepfakes(model, dataloader):
        
     print(f"Số ảnh riu: {count_0}")
     print(f"Số ảnh phake: {count_1}")
-    print(f"Pha kè: {count_deepfake}")
-    print(f"Rì eo: {count_real}")
+    print(f"Rì eo detected: {count_real}")
+    print(f"Pha kè detected: {count_deepfake}")
+
 
     train_acc = correct / total
 
