@@ -1,93 +1,124 @@
-# Deep fake detection on social media
+# DeepFake Detection Model Training
 
+This repository contains code for training a deep learning model to detect deepfake videos using a hybrid CNN-LSTM architecture.
 
+## Project Description
 
-## Getting started
+This project implements a CNN-LSTM-based deepfake detection model designed to identify manipulated video content by analyzing both spatial and temporal features. The model leverages Convolutional Neural Networks (CNNs) to extract spatial features from video frames (e.g., facial textures, landmarks) and Long Short-Term Memory (LSTM) networks to analyze temporal patterns across frame sequences, detecting inconsistencies indicative of deepfake manipulation. The approach is inspired by state-of-the-art techniques reviewed in _An Investigation into the Utilisation of CNN with LSTM for Video Deepfake Detection_ (Tipper et al., 2024).
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+Key features:
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+-   Hybrid CNN-LSTM architecture for spatial-temporal analysis
+-   Facial feature extraction using MTCNN and dlib for preprocessing
+-   Training and evaluation on the FaceForensics++ dataset
+-   Performance assessment using Accuracy, Precision, Recall, and F1-Score
+-   Data augmentation to enhance model robustness
 
-## Add your files
+## Directory Structure
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+The repository is organized as follows:
 
 ```
-cd existing_repo
-git remote add origin https://gitlab.com/danghaithinh/deep-fake-detection-on-social-media.git
-git branch -M main
-git push -uf origin main
+deep-fake-detection-on-social-media/
+│
+├── dataset/
+│   ├── raw/                # Raw FaceForensics++ dataset (real and manipulated videos)
+│   ├── processed/          # Preprocessed frame sequences and facial features
+│
+├── models/
+│   ├── checkpoints/        # Saved model checkpoints during training
+│   ├── pretrained/         # Pretrained CNN models (e.g., ResNet, Xception) for transfer learning
+│
+├── scripts/
+│   ├── train.py            # Script for training the CNN-LSTM model
+│   ├── evaluate.py         # Script for evaluating model performance
+│   ├── preprocess.py       # Script for video frame extraction and facial feature preprocessing
+│
+├── notebooks/
+│   ├── exploration.ipynb   # Jupyter notebook for exploring the FaceForensics++ dataset
+│   ├── visualization.ipynb # Notebook for visualizing detection results and metrics
+│
+├── results/
+│   ├── logs/               # Training and evaluation logs
+│   ├── metrics/            # Saved evaluation metrics (Accuracy, Precision, Recall, F1-Score)
+│
+└── README.md               # Project documentation
 ```
 
-## Integrate with your tools
+## Getting Started
 
-- [ ] [Set up project integrations](https://gitlab.com/danghaithinh/deep-fake-detection-on-social-media/-/settings/integrations)
+To set up and run the project, follow these steps:
 
-## Collaborate with your team
+1. **Clone the repository**:
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+    ```bash
+    git clone https://gitlab.com/danghaithinh/deep-fake-detection-on-social-media.git
+    cd deep-fake-detection-on-social-media
+    ```
 
-## Test and Deploy
+2. **Install dependencies**:
 
-Use the built-in continuous integration in GitLab.
+    Install the required Python packages, including TensorFlow/PyTorch, OpenCV, dlib, and others:
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+    ```bash
+    pip install -r requirements.txt
+    ```
 
-***
+3. **Prepare the dataset**:
 
-# Editing this README
+    Download the FaceForensics++ dataset from [Kaggle](https://www.kaggle.com/datasets/sanikatiwarekar/deep-fake-detection-dfd-entire-original-dataset/data) and preprocess it:
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+    ```bash
+    python scripts/preprocess.py --input dataset/raw --output dataset/processed
+    ```
 
-## Suggestions for a good README
+    - The preprocessing script extracts faces using MTCNN, identifies facial landmarks with dlib (e.g., eyes, nose, mouth), and applies data augmentation techniques (flipping, rotation, brightness adjustment, Gaussian noise).
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+4. **Train the model**:
 
-## Name
-Choose a self-explaining name for your project.
+    Train the CNN-LSTM model using the preprocessed data:
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+    ```bash
+    python scripts/train.py --config configs/train_config.yaml
+    ```
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+    - The training process uses K-Fold Cross-Validation to ensure robust performance across dataset splits.
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+5. **Evaluate the model**:
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+    Assess the trained model’s performance:
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+    ```bash
+    python scripts/evaluate.py --model models/checkpoints/best_model.pth
+    ```
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+    - Evaluation metrics include Accuracy, Precision, Recall, and F1-Score, as outlined in the project goals.
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+## Methodology
+
+The methodology is based on insights from Tipper et al. (2024) and tailored to the project’s objectives:
+
+1. **Dataset**: The FaceForensics++ dataset, containing real videos and manipulated videos (Deepfakes, Face2Face, FaceSwap), is used for training and testing.
+2. **Preprocessing**: Videos are processed to extract facial regions (using MTCNN) and landmarks (using dlib) from sequential frames.
+3. **Model Architecture**:
+    - **CNN**: Extracts spatial features (e.g., facial textures, lighting inconsistencies) from individual frames.
+    - **LSTM**: Analyzes temporal dependencies across frame sequences to detect deepfake artifacts.
+4. **Evaluation**: The model is evaluated on a test set with metrics such as Accuracy (targeting 85%-92%), Precision, Recall, and F1-Score.
+
+## Results
+
+Preliminary experiments aim to achieve detection accuracy between 85% and 92%, aligning with benchmarks from the literature (e.g., Tipper et al., 2024 report near-perfect accuracy with optimized CNN-LSTM models).
 
 ## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+Contributions are welcome! Please fork the repository and submit a pull request with your enhancements, such as improved feature extraction, model optimizations, or additional datasets.
 
 ## License
-For open source projects, say how it is licensed.
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+This project is licensed under the MIT License. See the `LICENSE` file for details.
+
+## References
+
+-   Tipper, S., Atlam, H. F., & Lallie, H. S. (2024). An Investigation into the Utilisation of CNN with LSTM for Video Deepfake Detection. _Applied Sciences_, 14(21), 9754. [https://www.mdpi.com/2076-3417/14/21/9754](https://www.mdpi.com/2076-3417/14/21/9754)
+-   Rossler, A., et al. (2019). FaceForensics++: Learning to Detect Manipulated Facial Images. _ICCV_. [https://arxiv.org/abs/1901.08971](https://arxiv.org/abs/1901.08971)
+-   Kaggle FaceForensics++ Dataset: [https://www.kaggle.com/datasets/xdxd003/ff-c23](https://www.kaggle.com/datasets/xdxd003/ff-c23)
