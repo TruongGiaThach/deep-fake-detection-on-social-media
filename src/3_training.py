@@ -18,7 +18,7 @@ from sklearn.utils.class_weight import compute_class_weight
 from PIL import ImageChops, Image
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
-from config import LABEL_FILE, FRAME_SAVE_PATH, MODEL_SAVE_PATH, MODEL_CHECKPOINT
+from config import LABEL_FILE, FRAME_SAVE_PATH, MODEL_SAVE_PATH, MODEL_CHECKPOINT, LOGS_PATH
 from models.data_provider import DeepfakeDataset
 from data_utils.data import load_face
 from models.efficient_net_lstm import EfficientNetLSTM
@@ -45,7 +45,6 @@ def main():
     tag = "efficient_netb0"
     enable_attention = True
     
-    print("cuda: ",torch.cuda.is_available())
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     # Load model
@@ -99,11 +98,9 @@ def main():
     class_weights = compute_class_weight('balanced', classes=np.unique(labels_np), y=labels_np)
     class_weights = torch.tensor(class_weights, dtype=torch.float).to(device)
 
-    
-
     torch.set_num_threads(os.cpu_count())  # Use all available CPU threads
 
-    # scaler = torch.amp.GradScaler("cuda")  # Mixed precision training (if using GPU)
+    scaler = torch.amp.GradScaler() if torch.cuda.is_available() else None # Mixed precision training (if using GPU)
     criterion = nn.CrossEntropyLoss(weight=class_weights).to(device)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
     lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
@@ -143,6 +140,7 @@ def main():
     # Training Loop
     stop = False
     while not stop:
+        model.train()
         total_loss, correct, total, = 0, 0, 0
         train_loss = train_num = correct = 0
         all_labels = []
@@ -150,36 +148,22 @@ def main():
         
         loop = tqdm(train_loader, leave=True)  # Add tqdm progress bar
         for images, labels in loop:
-            images, labels = images.to(device), labels.to(device)
-
-            model.train()
-
-            # with torch.amp.autocast('cuda'):  # Mixed precision
-            #     outputs = model(images)
-            #     loss = criterion(outputs, labels)
-
-            # scaler.scale(loss).backward()
-            # scaler.step(optimizer)
-            # scaler.update()
-
-            train_batch_num = len(images)
-            train_num += train_batch_num
-
-            train_batch_loss, train_batch_pred = batch_forward(model, device, criterion, images, labels)
-
-            all_labels.extend(labels.cpu().numpy())
-            all_preds.extend(train_batch_pred.cpu().numpy())
+            images = images.to(device)
+            labels = labels.to(device)
+            optimizer.zero_grad()
+            
+            train_batch_loss, train_batch_pred = batch_forward(model, device, criterion, images, labels, scaler=scaler)
 
             if torch.isnan(train_batch_loss):
                 raise ValueError('NaN loss')
             
+            train_batch_num = len(images)
+            train_num += train_batch_num
+
+            all_labels.extend(labels.cpu().numpy())
+            all_preds.extend(train_batch_pred.cpu().numpy())
+            
             train_loss += train_batch_loss.item() * train_batch_num
-
-            # total_loss  += train_batch_loss.item()
-            # _, predicted = torch.max(outputs, 1)
-            # correct += (predicted == labels).sum().item()
-            # total += labels.size(0)
-
 
             # Update tqdm description
             total += labels.size(0)
@@ -190,17 +174,24 @@ def main():
             loop.set_postfix(loss=total_loss/total, acc=train_acc)
 
             # Optimization
-            train_batch_loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-
+            if scaler is not None:
+                scaler.scale(train_batch_loss).backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                train_batch_loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                optimizer.step()
         
             # Logging
             if iteration > 0 and (iteration % log_interval == 0):
                 train_loss /= train_num
-                tb.add_scalar('train/loss', train_loss, iteration)
-                tb.add_scalar('lr', optimizer.param_groups[0]['lr'], iteration)
                 tb.add_scalar('epoch', epoch, iteration)
+                tb.add_scalar('train/total', total, iteration)
+                tb.add_scalar('train/total_loss', total_loss, iteration)
+                tb.add_scalar('train/total_correct', correct, iteration)
+                tb.add_scalar('lr', optimizer.param_groups[0]['lr'], iteration)
                 
                 # Checkpoint
                 save_model(model, optimizer, train_loss, val_loss, iteration, BATCH_SIZE, epoch, last_path)
@@ -221,16 +212,12 @@ def main():
                 tb.add_pr_curve('train/pr', train_labels, train_pred, iteration)
 
                 # Validation
-                val_loss = validation_routine(model, device, val_loader, criterion, tb, iteration, 'val')
+                val_loss = validation_routine(model, device, val_loader, criterion, tb, iteration, 'val', scaler)
                 tb.flush()
 
                 # LR Scheduler
                 lr_scheduler.step(val_loss)
-                # train_acc = correct / train_num
-                # precision = precision_score(all_labels, all_preds, average='weighted')
-                # f1 = f1_score(all_labels, all_preds, average='weighted')
-                # print(f"Epoch {epoch+1}, Loss: {train_loss :.4f}, Accuracy: {train_acc:.2f}, Precision: {precision:.4f}, F1 Score: {f1:.4f}")
-
+                
                 # Save best Model
                 if val_loss < min_val_loss:
                     min_val_loss = val_loss
@@ -295,25 +282,17 @@ def tb_attention(tb: SummaryWriter,
     sample_att = ToTensor()(sample_att_img)
     tb.add_image(tag=tag, img_tensor=sample_att, global_step=iteration)
 
-def batch_forward(model: EfficientNetLSTM, device: torch.device, criterion, data, labels):
+def batch_forward(model: EfficientNetLSTM, device: torch.device, criterion, data, labels, scaler=None):
     data = data.to(device)
     labels = labels.to(device)
-    out = model(data)
-    # pred = torch.sigmoid(out).detach().cpu().numpy()
+
+    with torch.amp.autocast(device_type=device.type, enabled=(scaler is not None)):
+        out = model(data)
+        loss = criterion(out, labels)
     _, pred = torch.max(out, 1)
-    loss = criterion(out, labels)
-    return loss, pred
+    return loss, pred  
 
-    # with torch.amp.autocast('cuda'):  # Mixed precision
-    #     outputs = model(data)
-    #     loss = criterion(outputs, labels)
-
-    # _, predicted = torch.max(outputs, 1)
-
-    # return loss, predicted    
-
-
-def validation_routine(model, device, val_loader, criterion, tb, iteration, tag:str, loader_len_norm: int = None):
+def validation_routine(model, device, val_loader, criterion, tb, iteration, tag:str, scaler, loader_len_norm: int = None):
     model.eval()
     loader_len_norm = loader_len_norm if loader_len_norm is not None else val_loader.batch_size
     val_num = 0
@@ -326,15 +305,18 @@ def validation_routine(model, device, val_loader, criterion, tb, iteration, tag:
         val_batch_num = len(batch_labels)
         labels_list.append(batch_labels.flatten())
         with torch.no_grad():
-            val_batch_loss, val_batch_pred = batch_forward(model, device, criterion, batch_data,
-                                                           batch_labels)
+            val_batch_loss, val_batch_pred = batch_forward(model, device, criterion, batch_data, batch_labels, scaler=scaler)
+
         pred_list.append(val_batch_pred.flatten())
         val_num += val_batch_num
         val_loss += val_batch_loss.item() * val_batch_num
+        val_correct += (val_batch_pred == batch_labels).sum().item()
 
     # Logging
     val_loss /= val_num
-    tb.add_scalar('{}/loss'.format(tag), val_loss, iteration)
+    tb.add_scalar('{}/total'.format(tag), val_num, iteration)
+    tb.add_scalar('{}/total_loss'.format(tag), val_loss, iteration)
+    tb.add_scalar('{}/total_correct'.format(tag), val_correct, iteration)
 
     if isinstance(criterion, nn.BCEWithLogitsLoss):
         val_labels = np.concatenate(labels_list)
