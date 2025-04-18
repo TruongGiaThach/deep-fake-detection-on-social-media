@@ -1,9 +1,9 @@
 # config.py
 
 # Dataset paths
-DATASET_PATH = "../dataset"
-REAL_PATH = "../dataset/videos/real"
-FAKE_PATH = "../dataset/videos/fake"
+DATASET_PATH = "dataset"
+REAL_PATH = "dataset/videos/real"
+FAKE_PATH = "dataset/videos/fake"
 
 # Frame extraction settings
 OUTPUT_FRAME_SIZE = (224, 224)
@@ -14,8 +14,8 @@ FRAME_COUNT = 10
 BATCH_SIZE = 32
 
 # Data paths
-FRAME_SAVE_PATH = "data/frames/"
-LABEL_FILE = "data/frames/labels.csv"
+FRAME_SAVE_PATH = "dataset/augmented_frames/frames/"
+LABEL_FILE = "dataset/augmented_frames/frames/labels.csv"
 DATA_PROCESSED_CHECKPOINT_REAL = "data/frames/real_checkpoints.txt"
 DATA_PROCESSED_CHECKPOINT_FAKE = "data/frames/fake_checkpoints.txt"
 

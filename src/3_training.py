@@ -26,22 +26,23 @@ from models.efficient_net_lstm import EfficientNetLSTM
 # Config
 BATCH_SIZE = 10
 LEARNING_RATE = 1e-4
+logs_folder = "logs"
 
 def main():
     # Config
     train_from_scratch = False
     initial_lr = LEARNING_RATE
     min_lr = initial_lr * 1e-5
-    log_interval = 74 # khoảng cách giữa các lần ghi log các chỉ số huấn luyện (train loss, accuracy, precision, F1, ROC AUC) vào file CSV và TensorBoard.
-    validation_interval = 749 # khoảng cách giữa các lần thực hiện validation (đánh giá trên tập validation) và ghi các chỉ số validation vào file CSV/TensorBoard.
-    max_num_iterations = 20000
+    log_interval = 420 # Log train metrics giữa epoch nhằm theo dõi quá trình huấn luyện
+    validation_interval = 840 # khoảng cách giữa các lần thực hiện validation (đánh giá trên tập validation) và ghi các chỉ số validation vào file CSV/TensorBoard. 
+    # hoặc có thể là số lượng batch trong một epoch
+    max_num_iterations = 60000 # tối đa 100 epoch
     val_loss = min_val_loss = patience = 10
     epoch = iteration = 0
     face_size = 128
     face_policy = 'scale'
     model_state = None
     opt_state = None
-    logs_folder = "logs"
     tag = "efficient_netb0"
     enable_attention = True
     
@@ -336,6 +337,8 @@ def tb_attention(tb: SummaryWriter, tag: str, iteration: int, model: nn.Module, 
     sample_att_img = ImageChops.multiply(sample_img, att_img)
     sample_att = ToTensor()(sample_att_img)
     tb.add_image(tag=tag, img_tensor=sample_att, global_step=iteration)
+    logdir = os.path.join(logs_folder, "attention")
+    sample_att_img.save(os.path.join(logdir, f"{tag}_{iteration}.png"))
 
 def batch_forward(model: EfficientNetLSTM, device: torch.device, criterion, data, labels):
     data = data.to(device)

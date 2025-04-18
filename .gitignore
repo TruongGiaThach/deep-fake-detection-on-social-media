@@ -19,7 +19,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-
+Python3106
 # Virtual Environment
 venv/
 ENV/
