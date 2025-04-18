@@ -13,7 +13,7 @@ import torch.multiprocessing
 torch.multiprocessing.set_sharing_strategy('file_system')
 from torchvision.transforms import ToPILImage, ToTensor
 from torch.utils.data import DataLoader
-from sklearn.metrics import precision_score, f1_score, roc_auc_score
+from sklearn.metrics import precision_score, f1_score, roc_auc_score, accuracy_score
 from sklearn.utils.class_weight import compute_class_weight
 from PIL import ImageChops, Image
 import albumentations as A
@@ -32,8 +32,8 @@ def main():
     train_from_scratch = False
     initial_lr = LEARNING_RATE
     min_lr = initial_lr * 1e-5
-    log_interval = 74
-    validation_interval = 749
+    log_interval = 74 # khoảng cách giữa các lần ghi log các chỉ số huấn luyện (train loss, accuracy, precision, F1, ROC AUC) vào file CSV và TensorBoard.
+    validation_interval = 749 # khoảng cách giữa các lần thực hiện validation (đánh giá trên tập validation) và ghi các chỉ số validation vào file CSV/TensorBoard.
     max_num_iterations = 20000
     val_loss = min_val_loss = patience = 10
     epoch = iteration = 0
@@ -45,7 +45,16 @@ def main():
     tag = "efficient_netb0"
     enable_attention = True
     
-    print("cuda: ",torch.cuda.is_available())
+    # CSV log file
+    log_csv_path = os.path.join(logs_folder, f"{tag}_training_log.csv")
+    csv_columns = [
+        'iteration', 'epoch', 'train_loss', 'val_loss', 'train_accuracy', 'val_accuracy',
+        'train_roc_auc', 'val_roc_auc', 'train_precision', 'val_precision', 'train_f1', 'val_f1', 'learning_rate'
+    ]
+    if not os.path.exists(log_csv_path):
+        pd.DataFrame(columns=csv_columns).to_csv(log_csv_path, index=False)
+    
+    print("cuda: ", torch.cuda.is_available())
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     # Load model
@@ -63,6 +72,8 @@ def main():
 
     # Load dataset from CSV
     dataset = DeepfakeDataset(LABEL_FILE, FRAME_SAVE_PATH, transform=transform)
+    
+    # old train_loader for full dataset
     train_size = int(0.7 * len(dataset))
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
@@ -70,6 +81,15 @@ def main():
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
     val_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
+    # subset_size = len(dataset) // 20
+    # dataset = torch.utils.data.Subset(dataset, range(subset_size))
+    # train_size = int(0.7 * len(dataset))
+    # val_size = len(dataset) - train_size
+    # train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
+
+    # train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+    # val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=True)
+    
     if len(train_dataset) == 0:
         print('No training samples. Halt.')
         return
@@ -121,7 +141,7 @@ def main():
     periodic_path = os.path.join(MODEL_CHECKPOINT, 'it{:06d}.pth')
 
     if not train_from_scratch and os.path.exists(last_path):
-        print('Loading model form: {}'.format(last_path))
+        print('Loading model from: {}'.format(last_path))
         state = torch.load(last_path, map_location='cpu')
         model_state = state['model']
         opt_state = state['opt']
@@ -197,55 +217,92 @@ def main():
         
             # Logging
             if iteration > 0 and (iteration % log_interval == 0):
-                train_loss /= train_num
-                tb.add_scalar('train/loss', train_loss, iteration)
+                train_loss_avg = train_loss / train_num
+                train_acc = accuracy_score(all_labels, all_preds)
+                train_precision = precision_score(all_labels, all_preds, average='weighted', zero_division=0)
+                train_f1 = f1_score(all_labels, all_preds, average='weighted', zero_division=0)
+                train_roc_auc = roc_auc_score(all_labels, all_preds)
+                
+                # Log to CSV
+                log_data = {
+                    'iteration': iteration,
+                    'epoch': epoch,
+                    'train_loss': train_loss_avg,
+                    'val_loss': None,
+                    'train_accuracy': train_acc,
+                    'val_accuracy': None,
+                    'train_roc_auc': train_roc_auc,
+                    'val_roc_auc': None,
+                    'train_precision': train_precision,
+                    'val_precision': None,
+                    'train_f1': train_f1,
+                    'val_f1': None,
+                    'learning_rate': optimizer.param_groups[0]['lr']
+                }
+                pd.DataFrame([log_data]).to_csv(log_csv_path, mode='a', header=False, index=False)
+                
+                tb.add_scalar('train/loss', train_loss_avg, iteration)
                 tb.add_scalar('lr', optimizer.param_groups[0]['lr'], iteration)
                 tb.add_scalar('epoch', epoch, iteration)
+                tb.add_scalar('train/accuracy', train_acc, iteration)
+                tb.add_scalar('train/precision', train_precision, iteration)
+                tb.add_scalar('train/f1', train_f1, iteration)
+                tb.add_scalar('train/roc_auc', train_roc_auc, iteration)
                 
-                # Checkpoint
-                save_model(model, optimizer, train_loss, val_loss, iteration, BATCH_SIZE, epoch, last_path)
+                save_model(model, optimizer, train_loss_avg, val_loss, iteration, BATCH_SIZE, epoch, last_path)
                 train_loss = train_num = 0
 
             # Validation
             if iteration > 0 and (iteration % validation_interval == 0):
                 # Model checkpoint
                 save_model(model, optimizer, train_loss, val_loss, iteration, BATCH_SIZE, epoch, periodic_path.format(iteration))
-
+                
                 train_labels = all_labels
                 train_pred = all_preds
                 all_labels = []
                 all_preds = []
-
+                
                 train_roc_auc = roc_auc_score(train_labels, train_pred)
                 tb.add_scalar('train/roc_auc', train_roc_auc, iteration)
                 tb.add_pr_curve('train/pr', train_labels, train_pred, iteration)
 
-                # Validation
-                val_loss = validation_routine(model, device, val_loader, criterion, tb, iteration, 'val')
+                val_loss, val_acc, val_precision, val_f1, val_roc_auc = validation_routine(
+                    model, device, val_loader, criterion, tb, iteration, 'val'
+                )
                 tb.flush()
 
                 # LR Scheduler
                 lr_scheduler.step(val_loss)
-                # train_acc = correct / train_num
-                # precision = precision_score(all_labels, all_preds, average='weighted')
-                # f1 = f1_score(all_labels, all_preds, average='weighted')
-                # print(f"Epoch {epoch+1}, Loss: {train_loss :.4f}, Accuracy: {train_acc:.2f}, Precision: {precision:.4f}, F1 Score: {f1:.4f}")
+                
+                # Log validation to CSV
+                log_data = {
+                    'iteration': iteration,
+                    'epoch': epoch,
+                    'train_loss': train_loss_avg,
+                    'val_loss': val_loss,
+                    'train_accuracy': train_acc,
+                    'val_accuracy': val_acc,
+                    'train_roc_auc': train_roc_auc,
+                    'val_roc_auc': val_roc_auc,
+                    'train_precision': train_precision,
+                    'val_precision': val_precision,
+                    'train_f1': train_f1,
+                    'val_f1': val_f1,
+                    'learning_rate': optimizer.param_groups[0]['lr']
+                }
+                pd.DataFrame([log_data]).to_csv(log_csv_path, mode='a', header=False, index=False)
 
-                # Save best Model
+ # Save best Model
                 if val_loss < min_val_loss:
                     min_val_loss = val_loss
                     save_model(model, optimizer, train_loss, val_loss, iteration, BATCH_SIZE, epoch, bestval_path)
 
-                # Attention
+# Attention
                 if enable_attention and hasattr(model, 'get_attention'):
                     model.eval()
-                    # Load label file to find frame paths
                     labels_df = pd.read_csv(LABEL_FILE)
-
-                    # Get one real and one fake sample
                     real_idx = labels_df[labels_df['label'] == 0].index[0]
                     fake_idx = labels_df[labels_df['label'] == 1].index[0]
-
                     for sample_idx, tag in [(real_idx, 'train/att/real'), (fake_idx, 'train/att/fake')]:
                         record = labels_df.loc[sample_idx]
                         tb_attention(tb, tag, iteration, model, device, face_size, face_policy, transform, FRAME_SAVE_PATH, record)
@@ -262,30 +319,15 @@ def main():
                 stop = True
                 break
 
-            # End of iteration
-
         epoch += 1 
 
-def tb_attention(tb: SummaryWriter,
-                 tag: str,
-                 iteration: int,
-                 model: nn.Module,
-                 device: torch.device,
-                 patch_size_load: int,
-                 face_crop_scale: str,
-                 val_transformer: A.BasicTransform,
-                 root: str,
-                 record: pd.Series,
-                 ):
-    # Crop face
-    sample_t = load_face(record=record, root=root, size=patch_size_load, scale=face_crop_scale,
-                         transformer=val_transformer)
-    sample_t_clean = load_face(record=record, root=root, size=patch_size_load, scale=face_crop_scale,
-                               transformer=ToTensorV2())
+def tb_attention(tb: SummaryWriter, tag: str, iteration: int, model: nn.Module, device: torch.device,
+                 patch_size_load: int, face_crop_scale: str, val_transformer: A.BasicTransform,
+                 root: str, record: pd.Series):
+    sample_t = load_face(record=record, root=root, size=patch_size_load, scale=face_crop_scale, transformer=val_transformer)
+    sample_t_clean = load_face(record=record, root=root, size=patch_size_load, scale=face_crop_scale, transformer=ToTensorV2())
     if torch.cuda.is_available():
         sample_t = sample_t.cuda(device)
-    # Transform
-    # Feed to net
     with torch.no_grad():
         att: torch.Tensor = model.get_attention(sample_t.unsqueeze(0))[0].cpu()
     att_img: Image.Image = ToPILImage()(att)
@@ -299,67 +341,56 @@ def batch_forward(model: EfficientNetLSTM, device: torch.device, criterion, data
     data = data.to(device)
     labels = labels.to(device)
     out = model(data)
-    # pred = torch.sigmoid(out).detach().cpu().numpy()
     _, pred = torch.max(out, 1)
     loss = criterion(out, labels)
     return loss, pred
 
-    # with torch.amp.autocast('cuda'):  # Mixed precision
-    #     outputs = model(data)
-    #     loss = criterion(outputs, labels)
-
-    # _, predicted = torch.max(outputs, 1)
-
-    # return loss, predicted    
-
-
-def validation_routine(model, device, val_loader, criterion, tb, iteration, tag:str, loader_len_norm: int = None):
+def validation_routine(model, device, val_loader, criterion, tb, iteration, tag: str, loader_len_norm: int = None):
     model.eval()
     loader_len_norm = loader_len_norm if loader_len_norm is not None else val_loader.batch_size
     val_num = 0
     val_loss = 0.
-    pred_list = list()
-    labels_list = list()
+    pred_list = []
+    labels_list = []
     for val_data in tqdm(val_loader, desc='Validation', leave=False, total=len(val_loader) // loader_len_norm):
         batch_data, batch_labels = val_data
-
         val_batch_num = len(batch_labels)
-        labels_list.append(batch_labels.flatten())
+        labels_list.extend(batch_labels.cpu().numpy())
         with torch.no_grad():
-            val_batch_loss, val_batch_pred = batch_forward(model, device, criterion, batch_data,
-                                                           batch_labels)
-        pred_list.append(val_batch_pred.flatten())
+            val_batch_loss, val_batch_pred = batch_forward(model, device, criterion, batch_data, batch_labels)
+        pred_list.extend(val_batch_pred.cpu().numpy())
         val_num += val_batch_num
         val_loss += val_batch_loss.item() * val_batch_num
 
     # Logging
     val_loss /= val_num
-    tb.add_scalar('{}/loss'.format(tag), val_loss, iteration)
+    val_acc = accuracy_score(labels_list, pred_list)
+    val_precision = precision_score(labels_list, pred_list, average='weighted', zero_division=0)
+    val_f1 = f1_score(labels_list, pred_list, average='weighted', zero_division=0)
+    val_roc_auc = roc_auc_score(labels_list, pred_list)
 
-    if isinstance(criterion, nn.BCEWithLogitsLoss):
-        val_labels = np.concatenate(labels_list)
-        val_pred = np.concatenate(pred_list)
-        val_roc_auc = roc_auc_score(val_labels, val_pred)
-        tb.add_scalar('{}/roc_auc'.format(tag), val_roc_auc, iteration)
-        tb.add_pr_curve('{}/pr'.format(tag), val_labels, val_pred, iteration)
+    tb.add_scalar(f'{tag}/loss', val_loss, iteration)
+    tb.add_scalar(f'{tag}/accuracy', val_acc, iteration)
+    tb.add_scalar(f'{tag}/precision', val_precision, iteration)
+    tb.add_scalar(f'{tag}/f1', val_f1, iteration)
+    tb.add_scalar(f'{tag}/roc_auc', val_roc_auc, iteration)
+    tb.add_pr_curve(f'{tag}/pr', np.array(labels_list), np.array(pred_list), iteration)
 
-    return val_loss
+    return val_loss, val_acc, val_precision, val_f1, val_roc_auc
 
-
-def save_model(model: EfficientNetLSTM, optimizer: optim.Optimizer,
-               train_loss: float, val_loss: float,
-               iteration: int, batch_size: int, epoch: int,
-               path: str):
+def save_model(model: EfficientNetLSTM, optimizer: optim.Optimizer, train_loss: float, val_loss: float,
+               iteration: int, batch_size: int, epoch: int, path: str):
     path = str(path)
-    state = dict(model=model.state_dict(),
-                 opt=optimizer.state_dict(),
-                 train_loss=train_loss,
-                 val_loss=val_loss,
-                 iteration=iteration,
-                 batch_size=batch_size,
-                 epoch=epoch)
+    state = dict(
+        model=model.state_dict(),
+        opt=optimizer.state_dict(),
+        train_loss=train_loss,
+        val_loss=val_loss,
+        iteration=iteration,
+        batch_size=batch_size,
+        epoch=epoch
+    )
     torch.save(state, path)
-
 
 if __name__ == '__main__':
     main()
