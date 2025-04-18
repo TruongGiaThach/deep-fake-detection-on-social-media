@@ -25,7 +25,6 @@ from models.efficient_net_lstm import EfficientNetLSTM
 
 # Config
 BATCH_SIZE = 10
-NUMB_EPOCHS = 10
 LEARNING_RATE = 1e-4
 
 def main():
@@ -39,12 +38,14 @@ def main():
     val_loss = min_val_loss = patience = 10
     epoch = iteration = 0
     face_size = 128
+    face_policy = 'scale'
     model_state = None
     opt_state = None
     logs_folder = "logs"
     tag = "efficient_netb0"
     enable_attention = True
-
+    
+    print("cuda: ",torch.cuda.is_available())
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     # Load model
@@ -235,19 +236,19 @@ def main():
                     min_val_loss = val_loss
                     save_model(model, optimizer, train_loss, val_loss, iteration, BATCH_SIZE, epoch, bestval_path)
 
-                # # Attention
-                # if enable_attention and hasattr(model, 'get_attention'):
-                #     model.eval()
-                #     # For each dataframe show the attention for a real,fake couple of frames
-                #     for df, root, sample_idx, tag in [
-                #         (train_dfs[0], train_roots[0], train_dfs[0][train_dfs[0]['label'] == False].index[0],
-                #          'train/att/real'),
-                #         (train_dfs[0], train_roots[0], train_dfs[0][train_dfs[0]['label'] == True].index[0],
-                #          'train/att/fake'),
-                #     ]:
-                #         record = df.loc[sample_idx]
-                #         tb_attention(tb, tag, iteration, model, device, face_size, face_policy,
-                #                      transform, root, record)
+                # Attention
+                if enable_attention and hasattr(model, 'get_attention'):
+                    model.eval()
+                    # Load label file to find frame paths
+                    labels_df = pd.read_csv(LABEL_FILE)
+
+                    # Get one real and one fake sample
+                    real_idx = labels_df[labels_df['label'] == 0].index[0]
+                    fake_idx = labels_df[labels_df['label'] == 1].index[0]
+
+                    for sample_idx, tag in [(real_idx, 'train/att/real'), (fake_idx, 'train/att/fake')]:
+                        record = labels_df.loc[sample_idx]
+                        tb_attention(tb, tag, iteration, model, device, face_size, face_policy, transform, FRAME_SAVE_PATH, record)
 
                 if optimizer.param_groups[0]['lr'] == min_lr:
                     print('Reached minimum learning rate. Stopping.')
