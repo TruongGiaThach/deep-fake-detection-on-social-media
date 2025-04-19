@@ -24,7 +24,7 @@ from data_utils.data import load_face
 from models.efficient_net_lstm import EfficientNetLSTM
 
 # Config
-BATCH_SIZE = 10
+BATCH_SIZE = 20
 LEARNING_RATE = 1e-4
 logs_folder = "logs"
 
