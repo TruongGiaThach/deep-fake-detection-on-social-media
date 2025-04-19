@@ -14,8 +14,8 @@ FRAME_COUNT = 10
 BATCH_SIZE = 32
 
 # Data paths
-FRAME_SAVE_PATH = "dataset/augmented_frames/frames/"
-LABEL_FILE = "dataset/augmented_frames/frames/labels.csv"
+FRAME_SAVE_PATH = "dataset/frames/"
+LABEL_FILE = "dataset/frames/labels.csv"
 DATA_PROCESSED_CHECKPOINT_REAL = "data/frames/real_checkpoints.txt"
 DATA_PROCESSED_CHECKPOINT_FAKE = "data/frames/fake_checkpoints.txt"
 
