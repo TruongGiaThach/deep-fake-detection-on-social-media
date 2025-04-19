@@ -13,6 +13,11 @@ class DeepfakeDataset(Dataset):
         self.transform = transform
         self.seq_len = seq_len
 
+        # Làm sạch cột tên file (cột đầu tiên) để chỉ chứa tên file
+        self.labels_df.iloc[:, 0] = self.labels_df.iloc[:, 0].apply(
+            lambda x: os.path.basename(x.replace('\\', '/')).strip()
+        )
+
         # Shuffle dataset to ensure mixing of real and fake
         self.labels_df = self.labels_df.sample(frac=1).reset_index(drop=True)
 
@@ -24,11 +29,26 @@ class DeepfakeDataset(Dataset):
         seq_indices = np.random.choice(len(self.labels_df), self.seq_len, replace=False)  # Randomize frames
 
         for frame_idx in seq_indices:
+            # Lấy tên file và đảm bảo làm sạch
+            img_filename = os.path.basename(self.labels_df.iloc[frame_idx, 0].replace('\\', '/')).strip()
+            
+            # Tạo đường dẫn
             img_name = os.path.join(
                 self.root_dir, 
                 "real" if self.labels_df.iloc[frame_idx, 1] == 0 else "fake", 
-                self.labels_df.iloc[frame_idx, 0]
+                img_filename
             )
+            # Chuẩn hóa đường dẫn
+            img_name = os.path.normpath(img_name)
+            
+            # Kiểm tra file tồn tại
+            if not os.path.exists(img_name):
+                raise FileNotFoundError(
+                    f"File not found: {img_name}\n"
+                    f"Raw filename: {self.labels_df.iloc[frame_idx, 0]}\n"
+                    f"Root dir: {self.root_dir}"
+                )
+            
             image = Image.open(img_name).convert('RGB')
 
             if self.transform:
