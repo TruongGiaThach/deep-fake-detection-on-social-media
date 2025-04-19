@@ -30,11 +30,11 @@ logs_folder = "logs"
 
 def main():
     # Config
-    train_from_scratch = False
+    train_from_scratch = True
     initial_lr = LEARNING_RATE
     min_lr = initial_lr * 1e-5
-    log_interval = 420 # Log train metrics giữa epoch nhằm theo dõi quá trình huấn luyện
-    validation_interval = 840 # khoảng cách giữa các lần thực hiện validation (đánh giá trên tập validation) và ghi các chỉ số validation vào file CSV/TensorBoard. 
+    log_interval = 210 # Log train metrics giữa epoch nhằm theo dõi quá trình huấn luyện
+    validation_interval = 420 # khoảng cách giữa các lần thực hiện validation (đánh giá trên tập validation) và ghi các chỉ số validation vào file CSV/TensorBoard. 
     # hoặc có thể là số lượng batch trong một epoch
     max_num_iterations = 60000 # tối đa 100 epoch
     val_loss = min_val_loss = patience = 10
