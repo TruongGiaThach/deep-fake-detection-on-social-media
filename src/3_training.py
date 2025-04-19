@@ -30,7 +30,7 @@ logs_folder = "logs"
 
 def main():
     # Config
-    train_from_scratch = True
+    train_from_scratch = False
     initial_lr = LEARNING_RATE
     min_lr = initial_lr * 1e-5
     log_interval = 210 # Log train metrics giữa epoch nhằm theo dõi quá trình huấn luyện
