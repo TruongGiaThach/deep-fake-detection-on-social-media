@@ -13,9 +13,9 @@ class DeepfakeDataset(Dataset):
         self.transform = transform
         self.seq_len = seq_len
 
-        # Làm sạch cột tên file (cột đầu tiên) để chỉ chứa tên file
+        # Chuẩn hóa tên file/thư mục trong cột đầu tiên, chỉ thay \ thành /
         self.labels_df.iloc[:, 0] = self.labels_df.iloc[:, 0].apply(
-            lambda x: os.path.basename(x.replace('\\', '/')).strip()
+            lambda x: x.replace('\\', '/').strip()
         )
 
         # Shuffle dataset to ensure mixing of real and fake
@@ -29,14 +29,14 @@ class DeepfakeDataset(Dataset):
         seq_indices = np.random.choice(len(self.labels_df), self.seq_len, replace=False)  # Randomize frames
 
         for frame_idx in seq_indices:
-            # Lấy tên file và đảm bảo làm sạch
-            img_filename = os.path.basename(self.labels_df.iloc[frame_idx, 0].replace('\\', '/')).strip()
+            # Lấy tên file/thư mục và chuẩn hóa
+            img_path = self.labels_df.iloc[frame_idx, 0].replace('\\', '/').strip()
             
             # Tạo đường dẫn
             img_name = os.path.join(
                 self.root_dir, 
                 "real" if self.labels_df.iloc[frame_idx, 1] == 0 else "fake", 
-                img_filename
+                img_path
             )
             # Chuẩn hóa đường dẫn
             img_name = os.path.normpath(img_name)
